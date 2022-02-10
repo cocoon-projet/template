@@ -14,7 +14,8 @@ trait CompileIncludes
     {
         if (strpos($args, ' with ')) {
             preg_match('#(.*?) with ([^\t\r\n}]+)#', $args, $matches);
-            $return =  '<?php $this->insert(' . $matches[1] . ', ' . $this->resolveExpression($matches[2]) . '); ?>' . PHP_EOL;
+            $return =  '<?php $this->insert(' . $matches[1] . ', ' .
+                $this->resolveExpression($matches[2]) . '); ?>' . PHP_EOL;
             return $return;
         }
         return '<?php $this->insert(' . $args . '); ?>';

@@ -34,7 +34,8 @@ trait CompileLayoutsAndStacks
     {
         if (strpos($args, ' with ')) {
             preg_match('#(.*?) with ([^\t\r\n}]+)#', $args, $matches);
-            $return =  '<?php $this->section(' . $matches[1] . ', ' . $this->resolveExpression($matches[2]) . '); ?>' . PHP_EOL;
+            $return =  '<?php $this->section(' . $matches[1] . ', ' .
+                $this->resolveExpression($matches[2]) . '); ?>' . PHP_EOL;
             return $return;
         }
         return '<?php $this->section(' . $args . '); ?>';
@@ -95,5 +96,4 @@ trait CompileLayoutsAndStacks
     {
         return "<script>\n" . array_shift($args) . "\n</script>";
     }
-    
 }
