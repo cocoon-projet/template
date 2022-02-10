@@ -1,0 +1,8 @@
+/vendor
+/config
+/resources
+/temp
+/.idea
+composer.lock
+index.php
+data.php

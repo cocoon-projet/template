@@ -1,0 +1,1 @@
+<?php echo $this->escape($this->func('asset', 'Bonjour')); ?>

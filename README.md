@@ -1,0 +1,1 @@
+# cocoon-projet/template

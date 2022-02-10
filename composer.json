@@ -1,0 +1,28 @@
+{
+    "name": "cocoon-projet/template",
+    "type": "library",
+    "description": "Un moteur de template pour le language php",
+    "keywords": ["templating", "template", "view", "views" ],
+    "homepage": "https://github.com/cocoon-projet/template",
+    "license": "MIT",
+    "require-dev": {
+        "squizlabs/php_codesniffer": "3.*",
+        "phpunit/phpunit": "^6",
+        "php-coveralls/php-coveralls": "^2.0",
+        "symfony/var-dumper": "^3.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "Cocoon\\": "src/Cocoon/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "require": {
+        "symfony/debug": "^3.4",
+        "nesbot/carbon": "^1.37"
+    }
+}
