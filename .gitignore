@@ -3,6 +3,6 @@
 /resources
 /temp
 /.idea
-composer.lock
 index.php
 date.php
+.phpunit.result.cache
