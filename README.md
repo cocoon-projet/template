@@ -1,6 +1,13 @@
+[![PHP Composer](https://github.com/cocoon-projet/template/actions/workflows/ci.yml/badge.svg)](https://github.com/cocoon-projet/template/actions/workflows/ci.yml)
+![License](https://img.shields.io/badge/Licence-MIT-green) [![codecov](https://codecov.io/gh/cocoon-projet/template/graph/badge.svg?token=WRFF3E0PA2)](https://codecov.io/gh/cocoon-projet/template)
+
 # Cocoon Template Engine
 
 Un moteur de template PHP simple et puissant, inspiré de Twig et Blade.
+
+## Pré-requis
+
+![PHP Version](https://img.shields.io/badge/php:version-8.0-blue)
 
 ## Installation
 
