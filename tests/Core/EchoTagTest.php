@@ -1,7 +1,6 @@
 <?php
 
-
-namespace Tests;
+namespace Tests\Core;
 
 class Person
 {

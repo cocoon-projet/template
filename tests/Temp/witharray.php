@@ -1,0 +1,1 @@
+<?php echo $this->escape($name); ?> is <?php echo $this->escape($age); ?> 

@@ -1,0 +1,1 @@
+@include('components.alert', ['type' => 'success', 'message' => 'Operation successful']) 

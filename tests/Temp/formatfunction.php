@@ -1,0 +1,1 @@
+<?php echo $this->escape($this->func('format', 'Hello', $name, $age)); ?> 

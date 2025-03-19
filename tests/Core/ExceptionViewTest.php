@@ -1,7 +1,7 @@
 <?php
 
 
-namespace Tests;
+namespace Tests\Core;
 
 use Cocoon\View\Engine;
 use Cocoon\View\TemplateException;
@@ -18,7 +18,7 @@ class ExceptionViewTest extends InitViewTest
     public function testTemplateNotExist()
     {
         $this->expectException(TemplateException::class);
-        $this->expectExceptionMessage('le template none est introuvable');
+        $this->expectExceptionMessage('Le template "none" est introuvable');
 
         $this->engine->render('none');
     }

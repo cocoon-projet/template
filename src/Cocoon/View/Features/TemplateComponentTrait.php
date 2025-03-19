@@ -4,153 +4,207 @@ namespace Cocoon\View\Features;
 
 use Cocoon\View\TemplateException;
 
+/**
+ * Trait pour la gestion des composants de template
+ *
+ * Ce trait fournit les fonctionnalités essentielles pour :
+ * 1. La gestion des sections (@section/@endsection)
+ * 2. La gestion des layouts (@layout)
+ * 3. L'inclusion de templates (@include)
+ * 4. La gestion des piles de contenu (@push/@endpush)
+ *
+ * Fonctionnalités principales :
+ * ```
+ * // Définition d'une section
+ * @section('content')
+ *   <h1>Contenu</h1>
+ * @endsection
+ *
+ * // Utilisation d'un layout
+ * @layout('layouts.main', ['title' => 'Page d\'accueil'])
+ *
+ * // Empilage de contenu
+ * @push('scripts')
+ *   <script src="app.js"></script>
+ * @endpush
+ * ```
+ *
+ * @package Cocoon\View\Features
+ */
 trait TemplateComponentTrait
 {
     /**
-     * listes des données pour le template
+     * Données pour le template courant
      *
-     * @var array
+     * @var array<string, mixed>
      */
-    protected $data = [];
+    protected array $data = [];
+
     /**
-     * Nom du layout
+     * Nom du layout à utiliser
      *
-     * @var [type]
+     * @var string|null
      */
-    protected $layoutName = null;
+    protected ?string $layoutName = null;
+
     /**
-     * Données pour le layout
+     * Données à passer au layout
      *
-     * @var array
+     * @var array<string, mixed>
      */
-    protected $layoutData = [];
+    protected array $layoutData = [];
+
     /**
-     * Liste des section pour les templates
+     * Liste des sections définies
      *
-     * @var array
+     * @var array<string, string>
      */
-    protected $sections = [];
+    protected array $sections = [];
+
     /**
-     * Nom d'une section
+     * Nom de la section en cours de définition
      *
-     * @var string
+     * @var string|null
      */
-    protected $sectionName;
+    protected ?string $sectionName = null;
+
     /**
-     * Stack content
+     * Contenu des piles (stacks)
      *
-     * @var array
+     * @var array<string, array<string>>
      */
-    protected $pushes = [];
+    protected array $pushes = [];
+
     /**
-     * Stack nom
+     * Pile des noms de stack en cours
      *
-     * @var array
+     * @var array<string>
      */
-    protected $stack = [];
+    protected array $stack = [];
+
     /**
-     * Initialise une section pour le template
+     * Initialise une section dans le template
      *
-     * @param string $section_name
-     * @param array $data
-     * @return void
+     * Une section permet de définir une partie du contenu qui sera
+     * injectée dans un layout. Si des données sont fournies, la section
+     * est automatiquement fermée après leur insertion.
+     *
+     * @param string $section_name Nom unique de la section
+     * @param string|null $data Contenu optionnel de la section
+     * @throws TemplateException Si une section est déjà en cours de définition
      */
-    public function section($section_name, $data = null)
+    public function section(string $section_name, ?string $data = null): void
     {
-        if ($this->sectionName) {
-            throw new TemplateException('une section est déjà initialisée');
+        if ($this->sectionName !== null) {
+            throw new TemplateException(
+                sprintf('Une section "%s" est déjà en cours de définition', $this->sectionName)
+            );
         }
 
         $this->sectionName = $section_name;
-
         ob_start();
 
-        if ($data != null) {
+        if ($data !== null) {
             echo $data;
             $this->endSection();
         }
     }
+
     /**
-     * Stop la section définit pour le template
+     * Termine la définition de la section en cours
      *
-     * @return void
+     * @throws TemplateException Si aucune section n'est en cours de définition
      */
-    public function endSection()
+    public function endSection(): void
     {
-        if (!$this->sectionName) {
-            throw new TemplateException('vous devez initialiser une section avant de la stopper.');
+        if ($this->sectionName === null) {
+            throw new TemplateException(
+                'Impossible de terminer une section : aucune section n\'est en cours de définition'
+            );
         }
 
-        if (!isset($this->sections[$this->sectionName])) {
-            $this->sections[$this->sectionName] = '';
-        }
-
-        $this->sections[$this->sectionName] =  ob_get_clean();
+        $this->sections[$this->sectionName] = ob_get_clean();
         $this->sectionName = null;
     }
+
     /**
-     * Retourne une section définit dans le layout
+     * Récupère le contenu d'une section
      *
-     * @param string $section_name
-     * @return void
+     * @param string $section_name Nom de la section
+     * @return string Contenu de la section
+     * @throws TemplateException Si la section n'existe pas
      */
-    public function getSection($section_name)
+    public function getSection(string $section_name): string
     {
         if (!isset($this->sections[$section_name])) {
-            throw new TemplateException('La section n\éxiste pas');
+            throw new TemplateException(
+                sprintf('La section "%s" n\'existe pas', $section_name)
+            );
         }
         return $this->sections[$section_name];
     }
+
     /**
-     * Démarre une push section
+     * Démarre l'empilage de contenu dans un stack
      *
-     * @param string $name
-     * @return void
+     * Les stacks permettent d'accumuler du contenu à différents endroits
+     * du template et de le restituer ailleurs (typiquement dans le layout).
+     *
+     * @param string $stack Nom du stack
+     * @param string $content Contenu optionnel à empiler directement
      */
-    public function push($stack, $content = '')
+    public function push(string $stack, string $content = ''): void
     {
-        ob_start();
-        if ($content == '') {
-             $this->stack[] = $stack;
+        if ($content === '') {
+            $this->stack[] = $stack;
+            ob_start();
         } else {
             $this->stack[] = $stack;
             $this->pushes[$stack][] = $content;
             $this->endPush();
         }
     }
+
     /**
-     * Stop une push section
+     * Termine l'empilage du contenu en cours
      *
-     * @return void
+     * @throws TemplateException Si aucun stack n'est en cours
      */
-    public function endPush()
+    public function endPush(): void
     {
         if (empty($this->stack)) {
-            throw new TemplateException('Impossible de stopper le stack si il n\'est pas démarré');
+            throw new TemplateException(
+                'Impossible de terminer l\'empilage : aucun stack n\'est en cours'
+            );
         }
-        $this->pushes[array_pop($this->stack)][] = ob_get_clean() . PHP_EOL;
+
+        $stackName = array_pop($this->stack);
+        if (!isset($this->pushes[$stackName])) {
+            $this->pushes[$stackName] = [];
+        }
+        $this->pushes[$stackName][] = ob_get_clean() . PHP_EOL;
     }
+
     /**
-     * Retourne une push section
+     * Récupère le contenu empilé dans un stack
      *
-     * @param string $name
-     * @param string $default
-     * @return string
+     * @param string $name Nom du stack
+     * @param string $default Contenu par défaut si le stack est vide
+     * @return string Contenu concaténé du stack
      */
-    public function getStack($name, $default = '') :string
+    public function getStack(string $name, string $default = ''): string
     {
         if (!isset($this->pushes[$name])) {
             return $default;
         }
 
-        if (isset($this->pushes[$name])) {
-            $content = implode($this->pushes[$name]);
-        }
-
-        return $content;
+        return implode('', $this->pushes[$name]);
     }
 
-    public function flushSections()
+    /**
+     * Vide toutes les sections et stacks
+     */
+    public function flushSections(): void
     {
         $this->sections = [];
         $this->pushes = [];
@@ -158,44 +212,49 @@ trait TemplateComponentTrait
     }
 
     /**
-     * Initialise un layout pour les templates
+     * Définit le layout à utiliser pour le template
      *
-     * @param string $name Nom du layout
-     * @param array $data
-     * @return void
+     * @param string $layout_name Nom du layout
+     * @param array<string, mixed> $layout_data Données à passer au layout
      */
-    public function layout($layout_name, array $layout_data = [])
+    public function layout(string $layout_name, array $layout_data = []): void
     {
         $this->layoutName = $layout_name;
         $this->layoutData = $layout_data;
     }
+
     /**
-     * Gestion des fichiers inclus dans le template: @include('alert')
+     * Inclut un sous-template
      *
-     * @param string $name nom du template
-     * @param array $data
-     * @return void
+     * Cette méthode :
+     * 1. Compile le template s'il n'existe pas ou s'il a été modifié
+     * 2. Extrait les variables dans la portée locale
+     * 3. Inclut le template compilé
+     *
+     * @param string $__template Chemin du template à inclure
+     * @param array<string, mixed> $data Variables à passer au template
      */
-    public function insert($__template, array $data = array())
+    public function insert(string $__template, array $data = []): void
     {
         extract($data);
-        //extract($this->data);
-        if (! $this->file->existsAndIsExpired($__template)) {
+
+        if (!$this->file->existsAndIsExpired($__template)) {
             $content_inc = $this->file->read($__template);
             $content = $this->getCompiler()->compile($content_inc);
             $this->file->put($__template, $content);
         }
+
         include $this->file->getPathTemplateCache($__template);
     }
+
     /**
-     * Echappement des caractères spéciaux
+     * Échappe une chaîne pour l'affichage HTML
      *
-     * @param string $string
-     * @return string
+     * @param mixed $string Valeur à échapper
+     * @return string Chaîne échappée
      */
-    public function escape($string) :string
+    public function escape(mixed $string): string
     {
-        // TODO: flag a prevoir dans config
-        return htmlspecialchars($string, ENT_QUOTES, 'UTF-8');
+        return htmlspecialchars((string)$string, ENT_QUOTES, 'UTF-8');
     }
 }

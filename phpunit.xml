@@ -1,14 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<phpunit bootstrap="./vendor/autoload.php" colors="true">
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true">
     <testsuites>
-        <testsuite name="Template">
-            <directory>tests</directory>
+        <testsuite name="Core">
+            <directory suffix="Test.php">tests/Core</directory>
+        </testsuite>
+        <testsuite name="Extensions">
+            <directory suffix="Test.php">tests/Extensions</directory>
         </testsuite>
     </testsuites>
-
-    <filter>
-        <whitelist>
-            <directory>src</directory>
-        </whitelist>
-    </filter>
+    <coverage processUncoveredFiles="true">
+        <include>
+            <directory suffix=".php">src</directory>
+        </include>
+        <exclude>
+            <directory suffix=".php">src/Cocoon/View/Extensions</directory>
+        </exclude>
+    </coverage>
 </phpunit>

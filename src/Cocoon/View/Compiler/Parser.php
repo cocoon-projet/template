@@ -14,56 +14,83 @@ use Cocoon\View\Compiler\Features\CompileConditionals;
 use Cocoon\View\Compiler\Features\CompileLayoutsAndStacks;
 
 /**
- * Parseur du template Twide
+ * Parseur du moteur de template Twide
  *
- * Class Parser
+ * Cette classe est responsable de :
+ * - L'analyse et la transformation des expressions {{ }} en code PHP
+ * - La compilation des directives @directive en code PHP
+ * - La gestion des filtres et des fonctions dans les templates
+ * - Le support des layouts et des sections
+ * - La gestion des boucles et des conditions
+ *
+ * Syntaxe supportée :
+ * - Variables : {{ variable }}, {{{ html_variable }}}
+ * - Filtres : {{ variable|upper }}, {{ variable|substr:0,1 }}
+ * - Directives : @if, @foreach, @section, etc.
+ * - Commentaires : {* commentaire *}
+ * - JavaScript : @script ... @endscript
+ *
+ * @package Cocoon\View\Compiler
  */
 class Parser
 {
     /**
-     * @var array // comments tag
-     */
-    protected $comment = ['{*', '*}'];
-    /**
-     * @var array // remplace comments tag
-     */
-    protected $replace = ['<!--', '-->'];
-    /**
-     * @var array // javascript code
-     */
-    protected $javascripts = [];
-    /**
-     * Liste des nouvelles directives
+     * Délimiteurs des commentaires dans les templates
      *
-     * @var array
+     * @var array<int, string>
      */
-    protected $custumDirectives = [];
+    protected array $comment = ['{*', '*}'];
+
     /**
-     * Raccourci pour fonction php
+     * Délimiteurs HTML qui remplacent les commentaires
      *
-     * @var array
+     * @var array<int, string>
      */
-    protected $filters = [];
+    protected array $replace = ['<!--', '-->'];
+
     /**
-     * Fonctions crées
+     * Code JavaScript extrait des templates
      *
-     * @var array
+     * @var array<int, string>
      */
-    protected $functions = [];
+    protected array $javascripts = [];
+
     /**
-     * String ou boleean expression
+     * Liste des directives personnalisées
      *
-     * @var array
+     * @var array<string, callable>
      */
-    protected $reservedWords = [
+    protected array $customDirectives = [];
+
+    /**
+     * Liste des filtres disponibles
+     *
+     * @var array<string, callable|string>
+     */
+    protected array $filters = [];
+
+    /**
+     * Liste des fonctions disponibles
+     *
+     * @var array<string, callable>
+     */
+    protected array $functions = [];
+
+    /**
+     * Mots réservés du langage
+     *
+     * @var array<int, string>
+     */
+    protected array $reservedWords = [
         'true', 'false', 'null'
     ];
+
     /**
-     * Donnée envoyée au template
+     * Données partagées avec le template
      *
-     * @var array
+     * @var array<string, mixed>
      */
-    protected $data;
+    protected array $data = [];
 
     use
         CompileEchos,
@@ -74,324 +101,388 @@ class Parser
         CompileOther;
 
     /**
-     * Parsing et complilation des templates
+     * Initialise le parseur avec une instance de Template
      *
-     * @param Template $template
+     * @param Template $template Instance du moteur de template
      */
     public function __construct(Template $template)
     {
-        $this->custumDirectives = $template->getCustumDirectives();
+        $this->customDirectives = $template->getCustomDirectives();
         $this->filters = $template->getFunction()->getFilters();
         $this->functions = $template->getFunction()->getFunctions();
         $this->data = $template->getData();
-        // TODO: $this->data['__default__'] = null; mettre dans template
     }
 
     /**
-     * Utiliser pour les tests unitaires.
+     * Définit les données pour les tests unitaires
      *
-     * @param array $data
+     * @param array<string, mixed> $data Données de test
      */
-    public function setData($data = [])
+    public function setData(array $data = []): void
     {
         $this->data = $data;
     }
+
     /**
-     * Parse les templates .tpl.php
+     * Parse et compile un template en code PHP
      *
-     * @param string $code
-     * @return mixed
+     * Cette méthode effectue les opérations suivantes :
+     * 1. Normalise les fins de ligne
+     * 2. Convertit les commentaires en commentaires HTML
+     * 3. Extrait et stocke le code JavaScript
+     * 4. Compile les expressions et directives en code PHP
+     *
+     * @param string $code Code source du template
+     * @return string Code PHP compilé
+     * @throws TemplateException Si une erreur de syntaxe est détectée
      */
-    public function parse($code)
+    public function parse(string $code): string
     {
-        $content = str_replace(array("\r\n", "\r"), "\n", $code);
-        // Remplace les tags des commentaires
-        $content = str_replace($this->comment, $this->replace, $content);
-        preg_match_all('!@script(.*?)@endscript!s', $content, $matches);
-        $this->javascripts = $matches[1];
-        $content = preg_replace("!@script(.*?)@endscript!s", '@javascript(code)', $content);
-        $result = preg_replace_callback(
-            '#(@?{{{?\s?([^\t\r\n}]+)\s?}?}})|(@[a-z]+\s?((\([^\t\r\n}]+)\))?)#s',
-            [$this, 'callback'],
-            $content
-        );
-        return $result;
+        if (empty($code)) {
+            return '';
+        }
+
+        try {
+            $content = str_replace(["\r\n", "\r"], "\n", $code);
+            
+            // Remplace les commentaires par des commentaires HTML
+            $content = str_replace($this->comment, $this->replace, $content);
+            
+            // Extrait le code JavaScript
+            if (preg_match_all('!@script(.*?)@endscript!s', $content, $matches)) {
+                $this->javascripts = $matches[1];
+                $content = preg_replace("!@script(.*?)@endscript!s", '@javascript(code)', $content);
+            }
+            
+            // Parse les expressions et les directives
+            $result = preg_replace_callback(
+                '#(@?{{{?\s*([^\t\r\n}]+)\s*}?}})|(@[a-z]+\s*(?:\([^\t\r\n}]+\))?)#s',
+                [$this, 'callback'],
+                $content
+            );
+
+            if ($result === null) {
+                throw new TemplateException('Erreur lors de la compilation du template');
+            }
+            
+            return $result;
+        } catch (InvalidArgumentException $e) {
+            throw new TemplateException('Erreur de syntaxe : ' . $e->getMessage());
+        }
     }
 
     /**
-     * Renvoie les fonctions permettants de compiler le template
+     * Traite les expressions trouvées dans le template
      *
-     * @param string $matches
-     * @return string
+     * @param array<int, string> $matches Résultats de la regex
+     * @return string Code PHP généré
+     * @throws TemplateException Si l'expression n'est pas reconnue
      */
-    protected function callback($matches)
+    protected function callback(array $matches): string
     {
-        list($tag) = $matches;
+        [$tag] = $matches;
+
+        // Expression d'affichage {{ }} ou {{{ }}}
         if (preg_match('/(@?[{]+)\s*(.*?)\s*([}]+)$/', $tag, $code)) {
             return $this->parseEchoTags($code);
-        } elseif (preg_match('/@([a-z]+)\s*(\((.*)\))?/', $tag, $code)) {
+        }
+        
+        // Directive @directive
+        if (preg_match('/@([a-z]+)\s*(?:\((.*)\))?/', $tag, $code)) {
             return $this->parseArobaseTags($code);
         }
+
+        throw new TemplateException(sprintf(
+            'Expression non reconnue : %s. Utilisez {{ var }} pour les variables ou @directive pour les directives.',
+            $tag
+        ));
     }
+
     /**
-     * Parse les tags de type string
+     * Parse les expressions d'affichage {{ }} et {{{ }}}
      *
-     * @param array $code
-     * @return string
+     * @param array<int, string> $code Parties de l'expression
+     * @return string Code PHP généré
+     * @throws TemplateException Si la syntaxe est invalide
      */
-    protected function parseEchoTags($code)
+    protected function parseEchoTags(array $code): string
     {
-        if ($code[1] == '@{{' && $code[3] == '}}') {
+        if ($code[1] === '@{{' && $code[3] === '}}') {
             return '{{ ' . $code[2] . ' }}';
         }
-        if ($code[1] == '{{' && $code[3] == '}}') {
+
+        if ($code[1] === '{{' && $code[3] === '}}') {
             return $this->compileEcho($code[2]);
-        } elseif ($code[1] == '{{{' && $code[3] == '}}}') {
+        }
+
+        if ($code[1] === '{{{' && $code[3] === '}}}') {
             return $this->compileNoEscape($code[2]);
-        } else {
-            throw new InvalidArgumentException('Balise non valide, vous devez utiliser {{ $var }} ou {{{ $var }}}');
         }
-    }
-    /**
-     * Parse les tags de type arobase @extends
-     *
-     * @param array $code
-     * @return void
-     */
-    protected function parseArobaseTags($code)
-    {
-        $pattern = count($code);
-        $compileFind = 'compile' . ucfirst($code[1]);
-        $arg = $code[3] ?? null;
-        if ($compileFind == 'compileJavascript') {
-            $arg = $this->javascripts;
-        }
-        if (method_exists($this, $compileFind)) {
-            if ($pattern == 2) {
-                return $this->$compileFind();
-            }
-            return $this->$compileFind($arg);
-        } elseif (isset($this->custumDirectives['@' . $code[1]])) {
-            $custum = $this->custumDirectives['@' . $code[1]];
-            // TODO: faire une function pour traiter les arguments des directives
-            // prend actuellemnt qu'un paramètre...
-            if ($pattern == 2) {
-                return $custum();
-            } else {
-                return $custum($this->resolveExpression($arg));
-            }
-        } else {
-            throw new InvalidArgumentException('Le tag @' . $code[1] . ' n\'éxiste pas');
-        }
-    }
-    /**
-     * Traitement string|array|object|numeric|bolean|null expression echo
-     *
-     * @param string $code
-     * @return string
-     */
-    protected function resolveExpression($code)
-    {
-        // bolean ou null expression
-        if (in_array($code, $this->reservedWords)) {
-            return $code;
-        }
-        // numeric et math expression
-        if (preg_match('/\-?[0-9]+(?:\.[0-9]+)?/A', $code)) {
-            return $code;
-        }
-        // variable array expression
-        if (preg_match('/([a-zA-Z0-9_]+)(\[)(.*?)(\])/', $code)) {
-            return '$' . $code;
-        }
-        // array ou object avec les expressions comprenant un point {{ person.name }}
-        if (strpos($code, '.')) {
-            return $this->expressionDataType($code);
-        }
-        // string ou array
-        if (preg_match('/(\'|\[|")(.*?)(\'|\]|")/', $code)) {
-            return $code;
-        }
-        return '$' . $code;
-    }
-    /**
-     * Parsing des expressions et filtres des variables et arguments {{ name|substr:0,1}}
-     *
-     * @param string $code
-     * @return string
-     */
-    protected function expressionFilters($code)
-    {
-        if (!strpos($code, '|')) {
-            return $this->resolveExpression($code);
-        }
-        $filters = explode('|', $code);
-        $var = $this->resolveExpression($filters[0]);
-        $filters[0] = '';
-        array_shift($filters);
-        $functionExists = function ($function) {
-            if (isset($this->filters[$function])) {
-                if (is_string($this->filters[$function])) {
-                    return $this->filters[$function];
-                }
-                return '$this->filter';
-            } else {
-                throw new TemplateException('Le filtre ' . $function . ' n\éxiste pas');
-            }
-        };
 
-        $resolveArguments = function ($arguments) {
-            $args = explode(', ', $arguments);
-            $return = [];
-            foreach ($args as $arg) {
-                $return[] = $this->resolveExpression(trim($arg));
-            }
-            return implode(', ', $return);
-        };
-        $expression = '';
-
-        foreach ($filters as $key => $filter) {
-            if (preg_match('/([a-zA-Z]+)\s*\((.*)\)/', $filter, $matches)) {
-                $filter = $matches;
-            } else {
-                $filter = [$filters[0], $filters[0]];
-            }
-            $separateur = ',';
-
-            if (!is_string($this->filters[$filter[1]])) {
-                $arg = isset($filter[2]) ? ', ' . $filter[2] : '';
-                $filter[2] = '\'' . $filter[1] . '\', ' . $var . $arg;
-                $var = '';
-                $separateur = '';
-            };
-            $expression = sprintf(
-                '%s(%s%s)',
-                $functionExists($filter[1]),
-                $key === 0 ? trim($var) : $expression,
-                isset($filter[2]) ? "{$separateur}{$resolveArguments($filter[2])}" : ''
-            );
-        }
-        return $expression;
-    }
-    /**
-     * Retourne le résultat d'une fonction appelée dans une balise echo {{ :url:'article/add' }}
-     *
-     * @param string $code
-     * @return string
-     */
-    protected function expressionFunctions($code)
-    {
-        return $this->parseArguments($code[1], $code[2], '$this->func');
-        // TODO: voir si l'on retourne une fonction sans paramètre
-        //return '$this->' . $function . '()';
-    }
-    /**
-     * Traitement des arguments des functions appelées {{ asset('path/to/css') }}
-     *
-     * @param string $filters
-     * @param string $var
-     * @return string
-     */
-    protected function parseArguments($function, $filters, $var)
-    {
-        $resolveArguments = function ($filters) {
-            $args = explode(',', $filters);
-            $return = [];
-            foreach ($args as $arg) {
-                $return[] = $this->resolveExpression(trim($arg));
-            }
-            return implode(', ', $return);
-        };
-
-        return sprintf(
-            '%s(\'' . $function . '\', %s)',
-            $var,
-            $resolveArguments($filters)
+        throw new TemplateException(
+            'Syntaxe invalide pour l\'expression d\'affichage. Utilisez {{ var }} pour un affichage échappé ' .
+            'ou {{{ var }}} pour un affichage non échappé.'
         );
     }
+
     /**
-     * Traitement des conditions if
+     * Parse les directives @directive
      *
-     * @param string $code
-     * @return string
+     * @param array<int, string> $code Parties de la directive
+     * @return string Code PHP généré
+     * @throws TemplateException Si la directive n'existe pas ou est invalide
      */
-    public function parseConditionnals($code)
+    protected function parseArobaseTags(array $code): string
     {
-        $keys = preg_split("/(and|or)/", $code, 0, PREG_SPLIT_DELIM_CAPTURE);
-
-        $if = function ($value) {
-            if (preg_match('/([^\t\r\n}]+)\s?(==|!=|<|>|>=|<=|===|!==})\s?([^\t\r\n}]+)/', $value, $matches)) {
-                return trim($this->expressionFilters($matches[1])) . ' ' . $matches[2] .
-                    ' ' . trim($this->expressionFilters($matches[3]));
-            } else {
-                return $this->expressionFilters($value);
-            }
-        };
-
-        $expression = '';
-
-        foreach ($keys as $value) {
-            if ($value === 'and' or $value === 'or') {
-                $expression .= $value . ' ';
-            } else {
-                $expression .= $if(trim($value)) . ' ';
-            }
+        if (empty($code[1])) {
+            throw new TemplateException('Directive invalide');
         }
-        return $expression;
-    }
-    /**
-     * Determine le typage des donnée a afficher object ou array ou string
-     *
-     * @param string $data
-     * @return string|null
-     */
-    public function expressionDataType($data) :string
-    {
-        $resolveArguments = function ($arguments) {
-            $args = explode(', ', $arguments);
-            $return = [];
-            foreach ($args as $arg) {
-                $return[] = $this->resolveExpression(trim($arg));
-            }
-            return implode(', ', $return);
-        };
 
-        if (strpos($data, '.')) {
-            $parse = explode('.', $data);
-            $expr = array_shift($parse);
-            $return = '$' . $expr;
-            if (is_object($this->data[$expr])) {
-                foreach ($parse as $value) {
-                    if (property_exists($this->data[$expr], $value) &&
-                        $this->propertyIsPublic($this->data[$expr], $value)) {
-                        $return .= '->' . $value;
-                        // TODO: methode static a gerer
-                    } elseif (method_exists($this->data[$expr], $value)) {
-                        $return .= '->' . $value . '()';
-                    } elseif (preg_match('/([a-zA-Z]+)\s*\((.*)\)/', $value, $matches)) {
-                        return $return . '->' . $matches[1] . '(' . $resolveArguments($matches[2]) . ')';
-                    } elseif (method_exists($this->data[$expr], 'get' . ucfirst($value))) {
-                        $return .= '->get' . ucfirst($value) . '()';
+        $directive = $code[1];
+        $compileMethod = 'compile' . ucfirst($directive);
+        $hasArguments = isset($code[2]);
+        $arguments = $hasArguments ? $code[2] : null;
+
+        // Cas spécial pour le JavaScript
+        if ($compileMethod === 'compileJavascript') {
+            return $this->$compileMethod($this->javascripts);
+        }
+
+        // Méthode de compilation interne
+        if (method_exists($this, $compileMethod)) {
+            return $hasArguments ? $this->$compileMethod($arguments) : $this->$compileMethod();
+        }
+
+        // Directive personnalisée
+        $customDirective = '@' . $directive;
+        if (isset($this->customDirectives[$customDirective])) {
+            $handler = $this->customDirectives[$customDirective];
+            return $hasArguments ? $handler($this->resolveExpression($arguments)) : $handler();
+        }
+
+        throw new TemplateException(sprintf(
+            'La directive @%s n\'existe pas. Les directives disponibles sont : @if, @foreach, @section, etc.',
+            $directive
+        ));
+    }
+
+    /**
+     * Résout une expression en code PHP valide
+     *
+     * Gère les types suivants :
+     * - Booléens et null
+     * - Nombres et expressions mathématiques
+     * - Tableaux et accès aux indices
+     * - Objets et accès aux propriétés
+     * - Chaînes de caractères
+     * - Variables simples
+     *
+     * @param string|null $code Expression à résoudre
+     * @return string Code PHP généré
+     * @throws TemplateException Si l'expression est invalide
+     */
+    protected function resolveExpression(?string $code): string
+    {
+        if ($code === null || trim($code) === '') {
+            throw new TemplateException('Expression vide');
+        }
+
+        $code = trim($code);
+
+        // Valeurs booléennes ou null
+        if (in_array($code, $this->reservedWords, true)) {
+            return $code;
+        }
+
+        // Tableaux littéraux
+        if (preg_match('/^\[(.*)\]$/', $code, $matches)) {
+            if (empty($matches[1])) {
+                return '[]';
+            }
+            $items = array_map('trim', explode(',', $matches[1]));
+            $resolvedItems = array_map(function ($item) {
+                return $this->resolveExpression($item);
+            }, $items);
+            return '[' . implode(', ', $resolvedItems) . ']';
+        }
+
+        // Nombres et expressions mathématiques
+        if (preg_match('/^-?\d+(?:\.\d+)?$/', $code)) {
+            return $code;
+        }
+
+        // Accès aux indices de tableau
+        if (preg_match('/^([a-zA-Z_][a-zA-Z0-9_]*)\[(.+?)\]$/', $code, $matches)) {
+            return '$' . $matches[1] . '[' . $this->resolveExpression($matches[2]) . ']';
+        }
+
+        // Accès aux propriétés d'objet ou tableau multidimensionnel
+        if (str_contains($code, '.')) {
+            return $this->expressionDataType($code);
+        }
+
+        // Chaînes de caractères
+        if (preg_match('/^([\'"])(.*?)\1$/', $code)) {
+            return $code;
+        }
+
+        // Variables simples
+        if (preg_match('/^[a-zA-Z_][a-zA-Z0-9_]*$/', $code)) {
+            return '$' . $code;
+        }
+
+        throw new TemplateException(sprintf('Expression invalide : %s', $code));
+    }
+
+    /**
+     * Résout une expression contenant des accès à des propriétés d'objet ou de tableau
+     *
+     * Cette méthode gère :
+     * - L'accès aux propriétés publiques d'objets
+     * - L'appel de méthodes d'objets
+     * - L'accès aux indices de tableaux multidimensionnels
+     * - La résolution des getters (méthode get*)
+     *
+     * Exemples :
+     * - user.name -> $user->name
+     * - user.getName() -> $user->getName()
+     * - array.key -> $array['key']
+     *
+     * @param string $data Expression à résoudre (ex: "user.name")
+     * @return string Code PHP généré
+     * @throws TemplateException Si l'expression est invalide ou l'accès impossible
+     */
+    protected function expressionDataType(string $data): string
+    {
+        if (!str_contains($data, '.')) {
+            throw new TemplateException('L\'expression doit contenir au moins un point (.)');
+        }
+
+        $parts = explode('.', $data);
+        $variable = array_shift($parts);
+        $expression = '$' . $variable;
+
+        if (!isset($this->data[$variable])) {
+            throw new TemplateException(sprintf(
+                'La variable "%s" n\'est pas définie dans le contexte du template',
+                $variable
+            ));
+        }
+
+        $target = $this->data[$variable];
+
+        if (is_object($target)) {
+            foreach ($parts as $part) {
+                // Appel de méthode avec arguments : user.format(arg1, arg2)
+                if (preg_match('/^([a-zA-Z_][a-zA-Z0-9_]*)\s*\((.*)\)$/', $part, $matches)) {
+                    $method = $matches[1];
+                    $args = $this->resolveMethodArguments($matches[2]);
+                    
+                    if (!method_exists($target, $method)) {
+                        throw new TemplateException(sprintf(
+                            'La méthode "%s" n\'existe pas dans la classe %s',
+                            $method,
+                            get_class($target)
+                        ));
+                    }
+                    
+                    $expression .= sprintf('->%s(%s)', $method, $args);
+                    continue;
+                }
+
+                // Propriété publique
+                if (property_exists($target, $part)) {
+                    try {
+                        if ($this->propertyIsPublic($target, $part)) {
+                            $expression .= '->' . $part;
+                            continue;
+                        }
+                    } catch (\ReflectionException $e) {
+                        throw new TemplateException(sprintf(
+                            'Erreur lors de l\'accès à la propriété "%s" : %s',
+                            $part,
+                            $e->getMessage()
+                        ));
                     }
                 }
-            } elseif (is_array($this->data[$expr])) {
-                foreach ($parse as $value) {
-                    $return .= '[\'' . $value . '\']';
+
+                // Méthode sans arguments
+                if (method_exists($target, $part)) {
+                    $expression .= '->' . $part . '()';
+                    continue;
                 }
+
+                // Getter
+                $getter = 'get' . ucfirst($part);
+                if (method_exists($target, $getter)) {
+                    $expression .= '->' . $getter . '()';
+                    continue;
+                }
+
+                throw new TemplateException(sprintf(
+                    'Impossible d\'accéder à "%s" : la propriété n\'est pas publique et aucun getter n\'existe',
+                    $part
+                ));
             }
+        } elseif (is_array($target)) {
+            foreach ($parts as $part) {
+                if (!preg_match('/^[a-zA-Z0-9_]+$/', $part)) {
+                    throw new TemplateException(sprintf(
+                        'Clé de tableau invalide : "%s". Seuls les caractères alphanumériques et _ sont autorisés',
+                        $part
+                    ));
+                }
+                $expression .= sprintf('[%s]', var_export($part, true));
+            }
+        } else {
+            throw new TemplateException(sprintf(
+                'Impossible d\'accéder aux propriétés : %s n\'est ni un objet ni un tableau',
+                $variable
+            ));
         }
-        return $return;
+
+        return $expression;
     }
 
     /**
-     * Determine si la propriétée de l'object est public
+     * Résout les arguments d'une méthode en code PHP valide
      *
-     * @param object $object
-     * @param string $property
-     * @return bool
-     * @throws \ReflectionException
+     * @param string $arguments Liste d'arguments séparés par des virgules
+     * @return string Arguments résolus et formatés pour PHP
+     * @throws TemplateException Si un argument est invalide
      */
-    private function propertyIsPublic($object, $property)
+    protected function resolveMethodArguments(string $arguments): string
+    {
+        if (trim($arguments) === '') {
+            return '';
+        }
+
+        $args = array_map('trim', explode(',', $arguments));
+        $resolved = [];
+
+        foreach ($args as $arg) {
+            try {
+                $resolved[] = $this->resolveExpression($arg);
+            } catch (TemplateException $e) {
+                throw new TemplateException(sprintf(
+                    'Argument invalide dans l\'appel de méthode : %s',
+                    $e->getMessage()
+                ));
+            }
+        }
+
+        return implode(', ', $resolved);
+    }
+
+    /**
+     * Vérifie si une propriété d'un objet est publique
+     *
+     * @param object $object Objet à vérifier
+     * @param string $property Nom de la propriété
+     * @return bool true si la propriété est publique
+     * @throws \ReflectionException Si la propriété n'existe pas ou en cas d'erreur de réflexion
+     */
+    private function propertyIsPublic(object $object, string $property): bool
     {
         return (new ReflectionProperty($object, $property))->isPublic();
     }

@@ -1,5 +1,5 @@
 <?php
-namespace Tests;
+namespace Tests\Core;
 
 use Cocoon\View\Compiler\Parser;
 use Cocoon\View\Engine;
@@ -14,9 +14,9 @@ abstract class InitViewTest extends TestCase
     protected $parser;
     protected $engine;
     protected $config = [
-        'template_path' => __DIR__ . DIRECTORY_SEPARATOR . 'Twide',
-        'template_php_path' => __DIR__ . DIRECTORY_SEPARATOR . 'Temp',
-        'extention' => '.tpl.php'
+        'template_path' => __DIR__ . DIRECTORY_SEPARATOR . '../Twide',
+        'template_php_path' => __DIR__ . DIRECTORY_SEPARATOR . '../Temp',
+        'extension' => '.tpl.php'
     ];
 
     protected function setUp() :void

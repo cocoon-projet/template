@@ -8,203 +8,234 @@ use Cocoon\View\TemplateException;
 use Cocoon\View\FunctionsTemplate;
 
 /**
- * Class Template
- * Compile les templates .tpl en php template système
+ * Classe principale de gestion des templates Twide
+ *
+ * Cette classe est responsable de :
+ * - La compilation des templates .tpl en fichiers PHP
+ * - La gestion du cache des templates
+ * - L'exécution des directives personnalisées
+ * - La gestion des layouts et des sections
+ *
+ * @package Cocoon\View
+ * @author Cocoon Project
  */
 class Template
 {
-    /**
-     * Instance de FileTemplate
-     *
-     * @var object Cocoon\View\FileTemplate
-     */
-    protected $file;
-    /**
-     * Instance de FunctionsTemplate
-     *
-     * @var object Cocoon\View\FunctionsTemplate
-     */
-    protected $function;
-    /**
-     * Liste des nouvelles directives
-     *
-     * @var array
-     */
-    protected $custumDirectives = [];
-    /**
-     * Listes des composants if custume directives
-     *
-     * @var array
-     */
-    protected $conditions = [];
-
     use TemplateComponentTrait;
+
     /**
-     * Initialise la class
+     * Gestionnaire de fichiers templates
      *
-     * @param array $config
+     * @var FileTemplate
      */
-    // TODO: variable data a initialiser
-    public function __construct($config)
+    protected FileTemplate $file;
+
+    /**
+     * Gestionnaire des fonctions et filtres
+     *
+     * @var FunctionsTemplate
+     */
+    protected FunctionsTemplate $function;
+
+    /**
+     * Liste des directives personnalisées
+     *
+     * @var array<string, callable>
+     */
+    protected array $customDirectives = [];
+
+    /**
+     * Liste des conditions personnalisées pour les directives @if
+     *
+     * @var array<string, callable>
+     */
+    protected array $conditions = [];
+
+    /**
+     * Initialise une nouvelle instance du gestionnaire de templates
+     *
+     * @param array<string, mixed> $config Configuration (chemins des templates, cache, etc.)
+     * @throws TemplateException Si la configuration est invalide
+     */
+    public function __construct(array $config)
     {
+        if (empty($config)) {
+            throw new TemplateException('La configuration du template est invalide');
+        }
         $this->file = new FileTemplate($config);
         $this->function = new FunctionsTemplate();
     }
 
     /**
-     * Fonction de compilation des templates .tpl
+     * Compile un template en PHP
      *
-     * @param string $__template
-     * @return void
+     * @param string $__template Chemin du template à compiler
+     * @throws TemplateException Si le template n'existe pas
      */
-    public function compile($__template)
+    public function compile(string $__template): void
     {
         $content = $this->getCompiler()->compile($this->file->read($__template));
         $this->file->put($__template, $content);
     }
+
     /**
-     * Compilation et mise a jour des templates .tpl
+     * Compile et exécute un template avec les données fournies
      *
-     * @param string $__template
-     * @param array $data
-     * @return string
+     * @param string $__template Chemin du template
+     * @param array<string, mixed> $data Variables à passer au template
+     * @throws TemplateException Si le template n'existe pas
+     * @return string Le contenu HTML généré
      */
-    protected function tokenize($__template, $data = [])
+    protected function tokenize(string $__template, array $data = []): string
     {
-        if (! is_file($this->file->getPathTemplate($__template))) {
-            throw new \Cocoon\View\TemplateException('le template '. $__template . ' est introuvable');
+        if (!is_file($this->file->getPathTemplate($__template))) {
+            throw new TemplateException(
+                sprintf('Le template "%s" est introuvable', $__template)
+            );
         }
+
         $this->data = $data;
-        //TODO: a voir
         $this->data['__default__'] = null;
+
         ob_start();
-        if (! $this->file->existsAndIsExpired($__template)) {
+        if (!$this->file->existsAndIsExpired($__template)) {
             $this->compile($__template);
         }
-        extract($this->data);
+
+        extract($this->data, EXTR_SKIP);
         include $this->file->getPathTemplateCache($__template);
+        $content = ob_get_clean();
 
-        $str = ob_get_clean();
-
-        if ($this->layoutName != null) {
+        // Gestion du layout si défini
+        if ($this->layoutName !== null) {
+            $this->data = array_merge($this->data, $this->layoutData);
             ob_start();
             if (!$this->file->existsAndIsExpired($this->layoutName)) {
                 $this->compile($this->layoutName);
             }
-            $this->data = array_merge($this->data, $this->layoutData);
-            extract($this->data);
+            extract($this->data, EXTR_SKIP);
             include $this->file->getPathTemplateCache($this->layoutName);
-
-            $str = ob_get_clean();
+            $content = ob_get_clean();
         }
-        return $str;
+
+        return $content;
     }
 
     /**
-     * Affiche le template
+     * Effectue le rendu d'un template
      *
-     * @param string $__template
-     * @param array $data
-     * @return string
+     * @param string $__template Chemin du template
+     * @param array<string, mixed> $data Variables à passer au template
+     * @return string Le contenu HTML généré
      */
-    public function render($__template, $data = [])
+    public function render(string $__template, array $data = []): string
     {
         return $this->tokenize($__template, $data);
     }
 
     /**
-     * Initialise le compiler des templates
-     *
-     * @return Compiler Cocoon\View\Compiler\Compiler
+     * Retourne une nouvelle instance du compilateur
      */
-    protected function getCompiler() : Compiler
+    protected function getCompiler(): Compiler
     {
         return new Compiler($this);
     }
+
     /**
-     * Retourne une instance de Functiontemplate
-     *
-     * @return object
+     * Retourne le gestionnaire de fonctions et filtres
      */
-    public function getFunction()
+    public function getFunction(): FunctionsTemplate
     {
         return $this->function;
     }
+
     /**
-     * Execute une fonction dans le template {{ :asset:'path/to/asset' }}
+     * Exécute une fonction dans le template
+     * Exemple: {{ :asset:'path/to/asset' }}
      *
-     * @param string $function
-     * @param array ...$args
-     * @return void
+     * @param string $function Nom de la fonction
+     * @param mixed ...$args Arguments de la fonction
+     * @return mixed Résultat de la fonction
      */
-    public function func($function, ...$args)
+    public function func(string $function, mixed ...$args): mixed
     {
         return $this->getFunction()->getFunction($function, ...$args);
     }
+
     /**
-     * Execute un filtre sur une donnée du template
+     * Applique un filtre sur une donnée du template
      *
-     * @param string $filter
-     * @param array ...$args
-     * @return void
+     * @param string $filter Nom du filtre
+     * @param mixed ...$args Arguments du filtre
+     * @return mixed Résultat du filtre
      */
-    public function filter($filter, ...$args)
+    public function filter(string $filter, mixed ...$args): mixed
     {
         return $this->getFunction()->getFilter($filter, ...$args);
     }
+
     /**
-     * Ajoute une nouvelle directive pour les templates
+     * Ajoute une directive personnalisée
      *
-     * @param string $name
-     * @param callable $callback
-     * @return void
+     * @param string $name Nom de la directive (sans @)
+     * @param callable $callback Fonction de traitement
      */
-    public function addDirective($name, $callback)
+    public function addDirective(string $name, callable $callback): void
     {
-        $this->custumDirectives['@' . $name] = $callback;
+        $this->customDirectives['@' . $name] = $callback;
     }
+
     /**
-     * Retourne les directives initialisées
+     * Retourne toutes les directives personnalisées
      *
-     * @return array
+     * @return array<string, callable>
      */
-    public function getCustumDirectives() :array
+    public function getCustomDirectives(): array
     {
-        return $this->custumDirectives;
+        return $this->customDirectives;
     }
+
     /**
-     * Retourne le résultat d'une condition
+     * Évalue une condition personnalisée
      *
-     * @param string $name
-     * @param array ...$parameters
-     * @return void
+     * @param string $name Nom de la condition
+     * @param mixed ...$parameters Paramètres de la condition
+     * @return mixed Résultat de la condition
+     * @throws TemplateException Si la condition n'existe pas
      */
-    public function check($name, ...$parameters)
+    public function check(string $name, mixed ...$parameters): mixed
     {
-        return call_user_func($this->conditions[$name], ...$parameters);
+        if (!isset($this->conditions[$name])) {
+            throw new TemplateException(
+                sprintf('La condition "%s" n\'existe pas', $name)
+            );
+        }
+        return $this->conditions[$name](...$parameters);
     }
+
     /**
-     * Ajoute une diretive de condition if directive
+     * Ajoute une condition personnalisée pour les directives @if
      *
-     * @param string $name
-     * @param callable $callback
-     * @return void
+     * @param string $name Nom de la condition
+     * @param callable $callback Fonction d'évaluation
      */
-    public function setCondition($name, $callback)
+    public function setCondition(string $name, callable $callback): void
     {
         $this->conditions[$name] = $callback;
     }
+
     /**
-     * Retourne les données envoyées au template
+     * Retourne les données partagées avec le template
      *
-     * @return array
+     * @return array<string, mixed>
      */
-    public function getData()
+    public function getData(): array
     {
         return $this->data;
     }
+
     /**
-     * Suppréssion sections et stacks
+     * Nettoie les sections et les piles avant la destruction
      */
     public function __destruct()
     {
